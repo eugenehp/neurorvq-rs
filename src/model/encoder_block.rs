@@ -1,15 +1,14 @@
+use crate::model::attention::Attention;
+use crate::model::feedforward::Mlp;
+use crate::model::norm::NeuroLayerNorm;
+use burn::module::{Param, ParamId};
 /// Transformer Block for NeuroRVQ.
 ///
 /// Python: `Block` class in NeuroRVQ_modules.py
 ///   Pre-norm architecture with optional layer-scale (gamma):
 ///   x = x + drop_path(gamma_1 * attn(norm1(x)))
 ///   x = x + drop_path(gamma_2 * mlp(norm2(x)))
-
 use burn::prelude::*;
-use burn::module::{Param, ParamId};
-use crate::model::norm::NeuroLayerNorm;
-use crate::model::attention::Attention;
-use crate::model::feedforward::Mlp;
 
 #[derive(Module, Debug)]
 pub struct TransformerBlock<B: Backend> {

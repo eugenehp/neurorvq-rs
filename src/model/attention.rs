@@ -1,3 +1,6 @@
+use crate::model::norm::NeuroLayerNorm;
+use burn::module::{Param, ParamId};
+use burn::nn::{Linear, LinearConfig};
 /// Self-Attention module for NeuroRVQ transformer blocks.
 ///
 /// Python: `Attention` class in NeuroRVQ_modules.py
@@ -6,12 +9,8 @@
 ///   q_norm, k_norm (optional LayerNorm on head_dim)
 ///   attn = softmax(q @ k^T / sqrt(d)) @ v
 ///   output = proj(attn)
-
 use burn::prelude::*;
-use burn::module::{Param, ParamId};
-use burn::nn::{Linear, LinearConfig};
 use burn::tensor::activation::softmax;
-use crate::model::norm::NeuroLayerNorm;
 
 #[derive(Module, Debug)]
 pub struct Attention<B: Backend> {

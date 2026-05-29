@@ -1,18 +1,19 @@
+#![cfg(feature = "burn")]
+
+use anyhow::Context;
+use burn::prelude::*;
 /// High-level APIs for NeuroRVQ inference:
 ///   - NeuroRVQEncoder: tokenizer pipeline (encode → quantize → decode)
 ///   - NeuroRVQFoundationModel: standalone foundation model encoder
-
 use std::{path::Path, time::Instant};
-use anyhow::Context;
-use burn::prelude::*;
 
 use crate::{
-    config::{Modality, NeuroRVQConfig, ConfigOverrides},
     channels,
+    config::{ConfigOverrides, Modality, NeuroRVQConfig},
     data::InputBatch,
     model::foundation::NeuroRVQFM,
     model::tokenizer::NeuroRVQTokenizer,
-    weights::{WeightMap, load_tokenizer, load_foundation_model},
+    weights::{load_foundation_model, load_tokenizer, WeightMap},
 };
 
 // ── Token Result ──────────────────────────────────────────────────────────────
@@ -85,9 +86,8 @@ impl<B: Backend> NeuroRVQEncoder<B> {
         weights_path: &Path,
         device: B::Device,
     ) -> anyhow::Result<(Self, f64)> {
-        let config = NeuroRVQConfig::from_yaml(
-            config_path.to_str().context("config path not UTF-8")?,
-        )?;
+        let config =
+            NeuroRVQConfig::from_yaml(config_path.to_str().context("config path not UTF-8")?)?;
         let modality = config.resolve_modality();
         Self::load_with_modality(config_path, weights_path, modality, device)
     }
@@ -143,15 +143,22 @@ impl<B: Backend> NeuroRVQEncoder<B> {
             &device,
         );
 
-        let mut wm = WeightMap::from_file(
-            weights_path.to_str().context("weights path not UTF-8")?,
-        )?;
+        let mut wm =
+            WeightMap::from_file(weights_path.to_str().context("weights path not UTF-8")?)?;
         eprintln!("Loading {} weight tensors...", wm.tensors.len());
         load_tokenizer(&mut wm, &mut model, &device)?;
 
         let ms = t.elapsed().as_secs_f64() * 1000.0;
 
-        Ok((Self { model, config, modality, device }, ms))
+        Ok((
+            Self {
+                model,
+                config,
+                modality,
+                device,
+            },
+            ms,
+        ))
     }
 
     pub fn describe(&self) -> String {
@@ -172,17 +179,16 @@ impl<B: Backend> NeuroRVQEncoder<B> {
 
         let x = signal.reshape([b, n, a, self.config.patch_size]);
 
-        let enc_out = self.model.get_tokens(
-            x,
-            batch.temporal_ix.clone(),
-            batch.spatial_ix.clone(),
-        );
+        let enc_out = self
+            .model
+            .get_tokens(x, batch.temporal_ix.clone(), batch.spatial_ix.clone());
 
         let mut branch_tokens = Vec::with_capacity(4);
         for branch_indices in &enc_out.indices {
             let mut levels = Vec::with_capacity(branch_indices.len());
             for level_indices in branch_indices {
-                let indices_vec = level_indices.clone()
+                let indices_vec = level_indices
+                    .clone()
                     .into_data()
                     .to_vec::<i64>()
                     .map_err(|e| anyhow::anyhow!("indices→vec: {e:?}"))?;
@@ -206,11 +212,9 @@ impl<B: Backend> NeuroRVQEncoder<B> {
 
         let x = signal.reshape([b, n, a, self.config.patch_size]);
 
-        let enc_out = self.model.encode(
-            x,
-            batch.temporal_ix.clone(),
-            batch.spatial_ix.clone(),
-        );
+        let enc_out = self
+            .model
+            .encode(x, batch.temporal_ix.clone(), batch.spatial_ix.clone());
 
         let (amp, sin, cos) = self.model.decode(
             &enc_out.quantized,
@@ -219,13 +223,19 @@ impl<B: Backend> NeuroRVQEncoder<B> {
         );
 
         let shape = amp.dims().to_vec();
-        let amp_vec = amp.squeeze::<2>().into_data()
+        let amp_vec = amp
+            .squeeze::<2>()
+            .into_data()
             .to_vec::<f32>()
             .map_err(|e| anyhow::anyhow!("amp→vec: {e:?}"))?;
-        let sin_vec = sin.squeeze::<2>().into_data()
+        let sin_vec = sin
+            .squeeze::<2>()
+            .into_data()
             .to_vec::<f32>()
             .map_err(|e| anyhow::anyhow!("sin→vec: {e:?}"))?;
-        let cos_vec = cos.squeeze::<2>().into_data()
+        let cos_vec = cos
+            .squeeze::<2>()
+            .into_data()
             .to_vec::<f32>()
             .map_err(|e| anyhow::anyhow!("cos→vec: {e:?}"))?;
 
@@ -249,10 +259,14 @@ impl<B: Backend> NeuroRVQEncoder<B> {
         );
 
         let shape = fwd.original_std.dims().to_vec();
-        let orig = fwd.original_std.into_data()
+        let orig = fwd
+            .original_std
+            .into_data()
             .to_vec::<f32>()
             .map_err(|e| anyhow::anyhow!("orig→vec: {e:?}"))?;
-        let recon = fwd.reconstructed_std.into_data()
+        let recon = fwd
+            .reconstructed_std
+            .into_data()
             .to_vec::<f32>()
             .map_err(|e| anyhow::anyhow!("recon→vec: {e:?}"))?;
 
@@ -296,10 +310,23 @@ impl<B: Backend> NeuroRVQFoundationModel<B> {
         modality: Modality,
         device: B::Device,
     ) -> anyhow::Result<(Self, f64)> {
+        Self::load_full(config_path, weights_path, modality, None, device)
+    }
+
+    pub fn load_full(
+        config_path: &Path,
+        weights_path: &Path,
+        modality: Modality,
+        overrides: Option<&ConfigOverrides>,
+        device: B::Device,
+    ) -> anyhow::Result<(Self, f64)> {
         let mut config = NeuroRVQConfig::from_yaml_with_modality(
             config_path.to_str().context("config path not UTF-8")?,
             modality,
         )?;
+        if let Some(ovr) = overrides {
+            config.apply_overrides(ovr);
+        }
 
         // Set n_global_electrodes from modality
         config.n_global_electrodes = channels::global_vocab_size(modality);
@@ -324,22 +351,33 @@ impl<B: Backend> NeuroRVQFoundationModel<B> {
             &device,
         );
 
-        let mut wm = WeightMap::from_file(
-            weights_path.to_str().context("weights path not UTF-8")?,
-        )?;
+        let mut wm =
+            WeightMap::from_file(weights_path.to_str().context("weights path not UTF-8")?)?;
         eprintln!("Loading {} weight tensors for FM...", wm.tensors.len());
         load_foundation_model(&mut wm, &mut model, &device)?;
 
         let ms = t.elapsed().as_secs_f64() * 1000.0;
 
-        Ok((Self { model, config, modality, device }, ms))
+        Ok((
+            Self {
+                model,
+                config,
+                modality,
+                device,
+            },
+            ms,
+        ))
     }
 
     pub fn describe(&self) -> String {
         let c = &self.config;
         format!(
             "NeuroRVQ-{}-FM  embed_dim={}  depth={}  n_patches={}  patch_size={}",
-            self.modality, c.fm_embed_dim(), c.fm_depth(), c.n_patches, c.patch_size,
+            self.modality,
+            c.fm_embed_dim(),
+            c.fm_depth(),
+            c.n_patches,
+            c.patch_size,
         )
     }
 
@@ -354,16 +392,15 @@ impl<B: Backend> NeuroRVQFoundationModel<B> {
 
         let x = signal.reshape([b, n, a, self.config.patch_size]);
 
-        let (o1, o2, o3, o4) = self.model.forward_encoder(
-            x,
-            batch.temporal_ix.clone(),
-            batch.spatial_ix.clone(),
-        );
+        let (o1, o2, o3, o4) =
+            self.model
+                .forward_encoder(x, batch.temporal_ix.clone(), batch.spatial_ix.clone());
 
         let shape = o1.dims().to_vec();
         let mut branch_features = Vec::with_capacity(4);
         for out in [o1, o2, o3, o4] {
-            let v = out.into_data()
+            let v = out
+                .into_data()
                 .to_vec::<f32>()
                 .map_err(|e| anyhow::anyhow!("feature→vec: {e:?}"))?;
             branch_features.push(v);
@@ -387,18 +424,17 @@ impl<B: Backend> NeuroRVQFoundationModel<B> {
 
         let x = signal.reshape([b, n, a, self.config.patch_size]);
 
-        let (o1, o2, o3, o4) = self.model.forward_encoder(
-            x,
-            batch.temporal_ix.clone(),
-            batch.spatial_ix.clone(),
-        );
+        let (o1, o2, o3, o4) =
+            self.model
+                .forward_encoder(x, batch.temporal_ix.clone(), batch.spatial_ix.clone());
 
         // Concat: [B, seq, 4*embed_dim]
         let concat = Tensor::cat(vec![o1, o2, o3, o4], 2);
         // Mean pool: [B, 4*embed_dim]
         let pooled = concat.mean_dim(1);
 
-        let v = pooled.into_data()
+        let v = pooled
+            .into_data()
             .to_vec::<f32>()
             .map_err(|e| anyhow::anyhow!("pooled→vec: {e:?}"))?;
         Ok(v)

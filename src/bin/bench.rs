@@ -1,3 +1,6 @@
+#![cfg(all(feature = "burn", feature = "ndarray"))]
+
+use std::io::Write;
 /// Benchmark suite for neurorvq-rs.
 ///
 /// Measures model construction time and inference latency across all three
@@ -6,15 +9,13 @@
 ///
 /// Run:
 ///   cargo run --release --bin bench
-
 use std::panic;
 use std::time::Instant;
-use std::io::Write;
 
-use neurorvq_rs::config::{Modality, NeuroRVQConfig};
-use neurorvq_rs::model::tokenizer::NeuroRVQTokenizer;
 use neurorvq_rs::channels;
+use neurorvq_rs::config::{Modality, NeuroRVQConfig};
 use neurorvq_rs::data;
+use neurorvq_rs::model::tokenizer::NeuroRVQTokenizer;
 
 #[cfg(feature = "ndarray")]
 type B = burn::backend::NdArray;
@@ -256,7 +257,8 @@ fn bar_chart_svg(
     s += &format!(
         "<text x=\"{}\" y=\"28\" text-anchor=\"middle\" font-size=\"15\" \
          font-weight=\"600\">{}</text>\n",
-        w / 2.0, title
+        w / 2.0,
+        title
     );
 
     // Y axis gridlines + labels
@@ -386,8 +388,11 @@ fn main() {
             Ok(r) => {
                 println!(
                     "construct={:.0}ms  encode={:.1}+/-{:.1}ms  tokenize={:.1}+/-{:.1}ms",
-                    r.construct_ms, r.encode_mean_ms, r.encode_std_ms,
-                    r.tokenize_mean_ms, r.tokenize_std_ms,
+                    r.construct_ms,
+                    r.encode_mean_ms,
+                    r.encode_std_ms,
+                    r.tokenize_mean_ms,
+                    r.tokenize_std_ms,
                 );
                 results.push(r);
             }
@@ -402,11 +407,17 @@ fn main() {
     // ── CSV ──────────────────────────────────────────────────────────────
     let csv_suffix: &str;
     #[cfg(feature = "blas-accelerate")]
-    { csv_suffix = "_accelerate"; }
+    {
+        csv_suffix = "_accelerate";
+    }
     #[cfg(all(feature = "ndarray", not(feature = "blas-accelerate")))]
-    { csv_suffix = "_ndarray"; }
+    {
+        csv_suffix = "_ndarray";
+    }
     #[cfg(all(feature = "wgpu", not(feature = "ndarray")))]
-    { csv_suffix = "_wgpu"; }
+    {
+        csv_suffix = "_wgpu";
+    }
     let csv_path = format!("figures/benchmark_results{csv_suffix}.csv");
     // Also write to default path for backward compat
     let csv_path_default = "figures/benchmark_results.csv";
@@ -417,9 +428,17 @@ fn main() {
             writeln!(
                 f,
                 "{},{},{},{},{},{},{:.2},{:.2},{:.2},{:.2},{:.2}",
-                r.label, r.modality, r.n_channels, r.n_time, r.n_patches, r.patch_size,
-                r.construct_ms, r.encode_mean_ms, r.encode_std_ms,
-                r.tokenize_mean_ms, r.tokenize_std_ms,
+                r.label,
+                r.modality,
+                r.n_channels,
+                r.n_time,
+                r.n_patches,
+                r.patch_size,
+                r.construct_ms,
+                r.encode_mean_ms,
+                r.encode_std_ms,
+                r.tokenize_mean_ms,
+                r.tokenize_std_ms,
             )
             .unwrap();
         }
@@ -433,8 +452,18 @@ fn main() {
         let labels: Vec<String> = results.iter().map(|r| r.label.clone()).collect();
         let values: Vec<f64> = results.iter().map(|r| r.tokenize_mean_ms).collect();
         let errors: Vec<f64> = results.iter().map(|r| r.tokenize_std_ms).collect();
-        let colors: Vec<String> = results.iter().map(|r| color_for_modality(&r.modality)).collect();
-        let svg = bar_chart_svg("Tokenize Latency (all configurations)", &labels, &values, &errors, &colors, "Latency (ms)");
+        let colors: Vec<String> = results
+            .iter()
+            .map(|r| color_for_modality(&r.modality))
+            .collect();
+        let svg = bar_chart_svg(
+            "Tokenize Latency (all configurations)",
+            &labels,
+            &values,
+            &errors,
+            &colors,
+            "Latency (ms)",
+        );
         std::fs::write("figures/tokenize_latency.svg", &svg).unwrap();
         println!("Chart: figures/tokenize_latency.svg");
     }
@@ -444,8 +473,18 @@ fn main() {
         let labels: Vec<String> = results.iter().map(|r| r.label.clone()).collect();
         let values: Vec<f64> = results.iter().map(|r| r.encode_mean_ms).collect();
         let errors: Vec<f64> = results.iter().map(|r| r.encode_std_ms).collect();
-        let colors: Vec<String> = results.iter().map(|r| color_for_modality(&r.modality)).collect();
-        let svg = bar_chart_svg("Encode Latency (encoder + RVQ quantize)", &labels, &values, &errors, &colors, "Latency (ms)");
+        let colors: Vec<String> = results
+            .iter()
+            .map(|r| color_for_modality(&r.modality))
+            .collect();
+        let svg = bar_chart_svg(
+            "Encode Latency (encoder + RVQ quantize)",
+            &labels,
+            &values,
+            &errors,
+            &colors,
+            "Latency (ms)",
+        );
         std::fs::write("figures/encode_latency.svg", &svg).unwrap();
         println!("Chart: figures/encode_latency.svg");
     }
@@ -458,12 +497,21 @@ fn main() {
         let colors: Vec<String> = mods.iter().map(|m| color_for_modality(m)).collect();
         for m in &mods {
             let mr: Vec<&BenchResult> = results.iter().filter(|r| r.modality == *m).collect();
-            if mr.is_empty() { continue; }
+            if mr.is_empty() {
+                continue;
+            }
             labels.push(m.to_string());
             values.push(mr.iter().map(|r| r.construct_ms).sum::<f64>() / mr.len() as f64);
         }
         let errors = vec![0.0; values.len()];
-        let svg = bar_chart_svg("Model Construction Time (avg per modality)", &labels, &values, &errors, &colors, "Time (ms)");
+        let svg = bar_chart_svg(
+            "Model Construction Time (avg per modality)",
+            &labels,
+            &values,
+            &errors,
+            &colors,
+            "Time (ms)",
+        );
         std::fs::write("figures/construction_time.svg", &svg).unwrap();
         println!("Chart: figures/construction_time.svg");
     }
@@ -475,7 +523,14 @@ fn main() {
         let values: Vec<f64> = eeg.iter().map(|r| r.tokenize_mean_ms).collect();
         let errors: Vec<f64> = eeg.iter().map(|r| r.tokenize_std_ms).collect();
         let colors = vec!["#4285f4".to_string()];
-        let svg = bar_chart_svg("EEG Tokenize Latency vs Channel Count", &labels, &values, &errors, &colors, "Latency (ms)");
+        let svg = bar_chart_svg(
+            "EEG Tokenize Latency vs Channel Count",
+            &labels,
+            &values,
+            &errors,
+            &colors,
+            "Latency (ms)",
+        );
         std::fs::write("figures/eeg_scaling.svg", &svg).unwrap();
         println!("Chart: figures/eeg_scaling.svg");
     }
@@ -494,8 +549,15 @@ fn main() {
             writeln!(
                 f,
                 "| {} | {} | {} | {} | {:.0} | {:.1} ± {:.1} | {:.1} ± {:.1} |",
-                r.label, r.modality, r.n_channels, r.n_time, r.construct_ms,
-                r.encode_mean_ms, r.encode_std_ms, r.tokenize_mean_ms, r.tokenize_std_ms,
+                r.label,
+                r.modality,
+                r.n_channels,
+                r.n_time,
+                r.construct_ms,
+                r.encode_mean_ms,
+                r.encode_std_ms,
+                r.tokenize_mean_ms,
+                r.tokenize_std_ms,
             )
             .unwrap();
         }

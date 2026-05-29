@@ -1,9 +1,9 @@
 [package]
 name = "neurorvq-rs"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.75"
-description = "NeuroRVQ biosignal tokenizer — inference in Rust with Burn ML"
+description = "NeuroRVQ biosignal tokenizer — inference in Rust (Burn and/or RLX)"
 keywords = ["eeg", "emg", "ecg", "tokenizer", "BCI"]
 categories = ["science", "algorithms"]
 authors = ["Eugene Hauptmann <eugene@reactivelions.com>"]
@@ -12,6 +12,8 @@ repository = "https://github.com/eugenehp/neurorvq-rs"
 homepage = "https://github.com/eugenehp/neurorvq-rs"
 readme = "README.md"
 
+autotests = false
+
 [lib]
 name = "neurorvq_rs"
 path = "src/lib.rs"
@@ -19,27 +21,76 @@ path = "src/lib.rs"
 [[bin]]
 name = "infer"
 path = "src/bin/infer.rs"
+required-features = ["rlx"]
+
+[[bin]]
+name = "bench"
+path = "src/bin/bench.rs"
+required-features = ["burn", "ndarray"]
+
+[[test]]
+name = "rlx_graph_compile"
+path = "tests/rlx_graph_compile.rs"
+required-features = ["rlx"]
+
+[[test]]
+name = "parity_rlx_vs_burn"
+path = "tests/parity_rlx_vs_burn.rs"
+required-features = ["burn", "rlx", "ndarray", "rlx-cpu"]
 
 [features]
-default = ["ndarray"]
+# Default: RLX on CPU only — no Burn dependency.
+# Burn reference path: `--features burn,ndarray` (plus optional `wgpu`, …).
+default = ["rlx", "rlx-cpu"]
 
-# CPU backends
-ndarray         = ["dep:burn-ndarray", "burn/ndarray"]
-blas-accelerate = ["burn-ndarray?/blas-accelerate"]
+# ── Inference engines (enable one or both) ─────────────────────────────────
+burn = ["dep:burn"]
+rlx  = ["dep:rlx", "dep:libm", "dep:ndarray"]
 
-# GPU backend
-wgpu            = ["burn/wgpu"]
-metal           = ["wgpu", "burn-wgpu/metal"]
-vulkan          = ["wgpu", "burn-wgpu/vulkan"]
+# ── Burn backends (each requires `burn`; CPU needs `ndarray` too) ──────────
+ndarray         = ["burn", "dep:burn-ndarray", "burn/ndarray"]
+blas-accelerate = ["burn", "ndarray", "burn-ndarray?/blas-accelerate"]
+wgpu            = ["burn", "burn/wgpu"]
+burn-metal      = ["burn", "wgpu", "burn-wgpu/metal"]
+burn-vulkan     = ["burn", "wgpu", "burn-wgpu/vulkan"]
+
+# ── RLX backends (forwarded to the rlx crate) ──────────────────────────────
+rlx-cpu             = ["rlx", "rlx/cpu"]
+rlx-blas-accelerate = ["rlx", "rlx/blas-accelerate"]
+rlx-blas-mkl        = ["rlx", "rlx/blas-mkl"]
+rlx-blas-openblas   = ["rlx", "rlx/blas-openblas"]
+rlx-metal           = ["rlx", "rlx/metal"]
+rlx-mlx             = ["rlx", "rlx/mlx"]
+rlx-gpu             = ["rlx", "rlx/gpu"]
+rlx-cuda            = ["rlx", "rlx/cuda"]
+rlx-rocm            = ["rlx", "rlx/rocm"]
+rlx-tpu             = ["rlx", "rlx/tpu"]
+rlx-apple-silicon   = ["rlx", "rlx/apple-silicon"]
+rlx-nvidia          = ["rlx", "rlx/nvidia"]
+
+# Shorthand aliases (RLX)
+cpu             = ["rlx-cpu"]
+metal           = ["rlx-metal"]
+gpu             = ["rlx-gpu"]
+cuda            = ["rlx-cuda"]
+rocm            = ["rlx-rocm"]
+tpu             = ["rlx-tpu"]
+apple-silicon   = ["rlx-apple-silicon"]
+nvidia          = ["rlx-nvidia"]
 
 [dependencies]
-burn = { version = "0.20.1", default-features = false, features = ["std", "simd"] }
+burn = { version = "0.20.1", default-features = false, features = ["std", "simd"], optional = true }
 burn-ndarray = { version = "0.20.1", default-features = false, features = ["std", "simd", "multi-threads"], optional = true }
 burn-wgpu = { version = "0.20.1", default-features = true, optional = true }
 
+rlx = { version = "0.2", default-features = false, optional = true }
+libm = { version = "0.2", optional = true }
+ndarray = { version = "0.16", optional = true }
+
 safetensors = "0.7"
 half = { version = "2", features = ["bytemuck"] }
-clap = { version = "4", features = ["derive"] }
+rayon = "1"
+clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"

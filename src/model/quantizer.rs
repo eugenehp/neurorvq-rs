@@ -1,3 +1,4 @@
+use burn::module::{Param, ParamId};
 /// Normalized EMA Vector Quantizer for NeuroRVQ.
 ///
 /// Python: `NormEMAVectorQuantizer` in norm_ema_quantizer.py
@@ -8,9 +9,7 @@
 ///   3. Return quantized output + indices
 ///
 /// The EMA updates are training-only and skipped here.
-
 use burn::prelude::*;
-use burn::module::{Param, ParamId};
 
 /// Single-level vector quantizer with L2-normalized codebook.
 #[derive(Module, Debug)]
@@ -35,7 +34,12 @@ impl<B: Backend> NormVectorQuantizer<B> {
 
     /// L2-normalize along the last dimension.
     fn l2norm(t: Tensor<B, 2>) -> Tensor<B, 2> {
-        let norm = t.clone().powf_scalar(2.0).sum_dim(1).sqrt().clamp_min(1e-12);
+        let norm = t
+            .clone()
+            .powf_scalar(2.0)
+            .sum_dim(1)
+            .sqrt()
+            .clamp_min(1e-12);
         t / norm
     }
 
@@ -47,9 +51,10 @@ impl<B: Backend> NormVectorQuantizer<B> {
         let device = z.device();
 
         // Rearrange: [B, C, H, W] → [B, H, W, C] → [B*H*W, C]
-        let z_bhwc = z.clone()
-            .swap_dims(1, 2)  // [B, H, C, W]
-            .swap_dims(2, 3)  // [B, H, W, C]
+        let z_bhwc = z
+            .clone()
+            .swap_dims(1, 2) // [B, H, C, W]
+            .swap_dims(2, 3) // [B, H, W, C]
             .reshape([b * h * w, c]);
 
         // L2-normalize
@@ -72,7 +77,7 @@ impl<B: Backend> NormVectorQuantizer<B> {
         // Reshape back: [B*H*W, C] → [B, H, W, C] → [B, C, H, W]
         let z_q = z_q_flat
             .reshape([b, h, w, c])
-            .swap_dims(2, 3)  // [B, H, C, W]
+            .swap_dims(2, 3) // [B, H, C, W]
             .swap_dims(1, 2); // [B, C, H, W]
 
         // At inference, loss = 0
@@ -92,7 +97,12 @@ impl<B: Backend> NormVectorQuantizer<B> {
         // Use scatter to build one-hot
         let indices_2d = indices.unsqueeze_dim::<2>(1); // [n, 1]
         let ones = Tensor::<B, 2, Int>::ones([n, 1], device);
-        let one_hot = one_hot.scatter(1, indices_2d, ones.float(), burn::tensor::IndexingUpdateOp::Add);
+        let one_hot = one_hot.scatter(
+            1,
+            indices_2d,
+            ones.float(),
+            burn::tensor::IndexingUpdateOp::Add,
+        );
         one_hot.matmul(codebook) // [n, codebook_dim]
     }
 

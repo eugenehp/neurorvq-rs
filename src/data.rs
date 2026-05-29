@@ -1,9 +1,10 @@
+#![cfg(feature = "burn")]
+
+use crate::config::Modality;
 /// Data preparation for NeuroRVQ inference.
 ///
 /// Input format: [B, N_channels, T_time] signal.
-
 use burn::prelude::*;
-use crate::config::Modality;
 
 /// A prepared input batch for the NeuroRVQ tokenizer.
 pub struct InputBatch<B: Backend> {
@@ -33,8 +34,14 @@ pub fn build_batch<B: Backend>(
     device: &B::Device,
 ) -> InputBatch<B> {
     build_batch_with_modality(
-        signal, channel_names, n_time_patches, max_n_patches,
-        n_channels, n_samples, Modality::EEG, device,
+        signal,
+        channel_names,
+        n_time_patches,
+        max_n_patches,
+        n_channels,
+        n_samples,
+        Modality::EEG,
+        device,
     )
 }
 
@@ -49,25 +56,25 @@ pub fn build_batch_with_modality<B: Backend>(
     modality: Modality,
     device: &B::Device,
 ) -> InputBatch<B> {
-    let signal_tensor = Tensor::<B, 2>::from_data(
-        TensorData::new(signal, vec![n_channels, n_samples]),
-        device,
-    ).unsqueeze_dim::<3>(0); // [1, N, T]
+    let signal_tensor =
+        Tensor::<B, 2>::from_data(TensorData::new(signal, vec![n_channels, n_samples]), device)
+            .unsqueeze_dim::<3>(0); // [1, N, T]
 
     let (temp_ix, spat_ix) = crate::channels::create_embedding_ix(
-        n_time_patches, max_n_patches, channel_names, modality,
+        n_time_patches,
+        max_n_patches,
+        channel_names,
+        modality,
     );
 
     let n_total = n_channels * n_time_patches;
-    let temporal_ix = Tensor::<B, 1, Int>::from_data(
-        TensorData::new(temp_ix, vec![n_total]),
-        device,
-    ).unsqueeze_dim::<2>(0); // [1, N*T]
+    let temporal_ix =
+        Tensor::<B, 1, Int>::from_data(TensorData::new(temp_ix, vec![n_total]), device)
+            .unsqueeze_dim::<2>(0); // [1, N*T]
 
-    let spatial_ix = Tensor::<B, 1, Int>::from_data(
-        TensorData::new(spat_ix, vec![n_total]),
-        device,
-    ).unsqueeze_dim::<2>(0);
+    let spatial_ix =
+        Tensor::<B, 1, Int>::from_data(TensorData::new(spat_ix, vec![n_total]), device)
+            .unsqueeze_dim::<2>(0);
 
     InputBatch {
         signal: signal_tensor,

@@ -1,3 +1,4 @@
+use crate::model::quantizer::NormVectorQuantizer;
 /// Residual Vector Quantization for NeuroRVQ.
 ///
 /// Python: `ResidualVectorQuantization` in RVQ.py
@@ -9,9 +10,7 @@
 ///     quantized = quantizer(residual)
 ///     residual = residual - quantized
 ///     output += quantized
-
 use burn::prelude::*;
-use crate::model::quantizer::NormVectorQuantizer;
 
 /// RVQ with N quantizer levels.
 #[derive(Module, Debug)]
@@ -31,7 +30,10 @@ impl<B: Backend> ResidualVQ<B> {
             .map(|_| NormVectorQuantizer::new(num_tokens, codebook_dim, device))
             .collect();
 
-        Self { layers, num_quantizers }
+        Self {
+            layers,
+            num_quantizers,
+        }
     }
 
     /// Forward pass (inference).

@@ -1,3 +1,7 @@
+use crate::config::Modality;
+use crate::model::foundation::NeuroRVQFM;
+use crate::model::rvq::ResidualVQ;
+use burn::nn::{Linear, LinearConfig};
 /// NeuroRVQ Tokenizer — the full encoder-quantizer-decoder pipeline.
 ///
 /// Python: `NeuroRVQTokenizer` class in NeuroRVQ.py
@@ -9,13 +13,8 @@
 ///   4. Decoder: quantized → 4 decoded branches → concat
 ///   5. Reconstruction heads: predict FFT amplitude, sin(phase), cos(phase)
 ///   6. Inverse FFT → reconstructed signal
-
 use burn::prelude::*;
-use burn::nn::{Linear, LinearConfig};
 use burn::tensor::activation::{gelu, tanh};
-use crate::config::Modality;
-use crate::model::foundation::NeuroRVQFM;
-use crate::model::rvq::ResidualVQ;
 
 /// Number of RVQ quantizer levels per modality.
 /// Python: hardcoded in NeuroRVQTokenizer.__init__
@@ -90,11 +89,23 @@ impl<B: Backend> NeuroRVQTokenizer<B> {
         device: &B::Device,
     ) -> Self {
         Self::new_with_modality(
-            n_patches, patch_size, embed_dim, code_dim, n_code,
-            decoder_out_dim, out_chans_encoder, depth_encoder,
-            depth_decoder, num_heads, mlp_ratio, qkv_bias,
-            init_values, _init_scale, n_global_electrodes,
-            Modality::EEG, device,
+            n_patches,
+            patch_size,
+            embed_dim,
+            code_dim,
+            n_code,
+            decoder_out_dim,
+            out_chans_encoder,
+            depth_encoder,
+            depth_decoder,
+            num_heads,
+            mlp_ratio,
+            qkv_bias,
+            init_values,
+            _init_scale,
+            n_global_electrodes,
+            Modality::EEG,
+            device,
         )
     }
 
@@ -120,16 +131,40 @@ impl<B: Backend> NeuroRVQTokenizer<B> {
     ) -> Self {
         // Encoder
         let encoder = NeuroRVQFM::new_with_modality(
-            n_patches, patch_size, 1, out_chans_encoder, 0, embed_dim,
-            depth_encoder, num_heads, mlp_ratio, qkv_bias, init_values,
-            n_global_electrodes, true, modality, device,
+            n_patches,
+            patch_size,
+            1,
+            out_chans_encoder,
+            0,
+            embed_dim,
+            depth_encoder,
+            num_heads,
+            mlp_ratio,
+            qkv_bias,
+            init_values,
+            n_global_electrodes,
+            true,
+            modality,
+            device,
         );
 
         // Decoder (modality doesn't affect decoder since it uses PatchEmbed, not MultiScaleConv)
         let decoder = NeuroRVQFM::new_with_modality(
-            n_patches, patch_size, code_dim, 0, 0, embed_dim,
-            depth_decoder, num_heads, mlp_ratio, qkv_bias, init_values,
-            n_global_electrodes, false, modality, device,
+            n_patches,
+            patch_size,
+            code_dim,
+            0,
+            0,
+            embed_dim,
+            depth_decoder,
+            num_heads,
+            mlp_ratio,
+            qkv_bias,
+            init_values,
+            n_global_electrodes,
+            false,
+            modality,
+            device,
         );
 
         // 4 RVQ codebooks — num_quantizers depends on modality (EEG/ECG=8, EMG=16)
@@ -142,8 +177,12 @@ impl<B: Backend> NeuroRVQTokenizer<B> {
         // Encode heads: embed_dim → embed_dim → Tanh → code_dim
         let mk_encode_head = |device: &B::Device| -> (Linear<B>, Linear<B>) {
             (
-                LinearConfig::new(embed_dim, embed_dim).with_bias(true).init(device),
-                LinearConfig::new(embed_dim, code_dim).with_bias(true).init(device),
+                LinearConfig::new(embed_dim, embed_dim)
+                    .with_bias(true)
+                    .init(device),
+                LinearConfig::new(embed_dim, code_dim)
+                    .with_bias(true)
+                    .init(device),
             )
         };
         let (eh1_fc1, eh1_fc2) = mk_encode_head(device);
@@ -153,12 +192,24 @@ impl<B: Backend> NeuroRVQTokenizer<B> {
 
         // Decode heads
         let dec_in = 4 * embed_dim; // concat of 4 decoder branches
-        let decode_amp_fc1 = LinearConfig::new(dec_in, embed_dim).with_bias(true).init(device);
-        let decode_amp_fc2 = LinearConfig::new(embed_dim, decoder_out_dim).with_bias(true).init(device);
-        let decode_sin_fc1 = LinearConfig::new(dec_in, embed_dim).with_bias(true).init(device);
-        let decode_sin_fc2 = LinearConfig::new(embed_dim, decoder_out_dim).with_bias(true).init(device);
-        let decode_cos_fc1 = LinearConfig::new(dec_in, embed_dim).with_bias(true).init(device);
-        let decode_cos_fc2 = LinearConfig::new(embed_dim, decoder_out_dim).with_bias(true).init(device);
+        let decode_amp_fc1 = LinearConfig::new(dec_in, embed_dim)
+            .with_bias(true)
+            .init(device);
+        let decode_amp_fc2 = LinearConfig::new(embed_dim, decoder_out_dim)
+            .with_bias(true)
+            .init(device);
+        let decode_sin_fc1 = LinearConfig::new(dec_in, embed_dim)
+            .with_bias(true)
+            .init(device);
+        let decode_sin_fc2 = LinearConfig::new(embed_dim, decoder_out_dim)
+            .with_bias(true)
+            .init(device);
+        let decode_cos_fc1 = LinearConfig::new(dec_in, embed_dim)
+            .with_bias(true)
+            .init(device);
+        let decode_cos_fc2 = LinearConfig::new(embed_dim, decoder_out_dim)
+            .with_bias(true)
+            .init(device);
 
         Self {
             encoder,
@@ -201,9 +252,7 @@ impl<B: Backend> NeuroRVQTokenizer<B> {
         let [b, n, _a, _t] = x.dims();
 
         // Encoder forward → 4 branch features
-        let (f1, f2, f3, f4) = self.encoder.forward_encoder(
-            x, temporal_ix, spatial_ix,
-        );
+        let (f1, f2, f3, f4) = self.encoder.forward_encoder(x, temporal_ix, spatial_ix);
 
         // Apply encode task layers: Linear → Tanh → Linear
         let apply_head = |f: Tensor<B, 3>, fc1: &Linear<B>, fc2: &Linear<B>| -> Tensor<B, 3> {
@@ -254,20 +303,48 @@ impl<B: Backend> NeuroRVQTokenizer<B> {
         spatial_ix: Tensor<B, 2, Int>,
     ) -> (Tensor<B, 3>, Tensor<B, 3>, Tensor<B, 3>) {
         // Decode each branch
-        let d1 = self.decoder.forward_decoder(quantized[0].clone(), temporal_ix.clone(), spatial_ix.clone(), 0);
-        let d2 = self.decoder.forward_decoder(quantized[1].clone(), temporal_ix.clone(), spatial_ix.clone(), 1);
-        let d3 = self.decoder.forward_decoder(quantized[2].clone(), temporal_ix.clone(), spatial_ix.clone(), 2);
-        let d4 = self.decoder.forward_decoder(quantized[3].clone(), temporal_ix.clone(), spatial_ix.clone(), 3);
+        let d1 = self.decoder.forward_decoder(
+            quantized[0].clone(),
+            temporal_ix.clone(),
+            spatial_ix.clone(),
+            0,
+        );
+        let d2 = self.decoder.forward_decoder(
+            quantized[1].clone(),
+            temporal_ix.clone(),
+            spatial_ix.clone(),
+            1,
+        );
+        let d3 = self.decoder.forward_decoder(
+            quantized[2].clone(),
+            temporal_ix.clone(),
+            spatial_ix.clone(),
+            2,
+        );
+        let d4 = self.decoder.forward_decoder(
+            quantized[3].clone(),
+            temporal_ix.clone(),
+            spatial_ix.clone(),
+            3,
+        );
 
         // Concatenate along feature dim: [B, seq, 4*embed_dim]
         let dec_features = Tensor::cat(vec![d1, d2, d3, d4], 2);
 
         // Amplitude head: Linear → GELU → Linear
-        let amp = self.decode_amp_fc2.forward(gelu(self.decode_amp_fc1.forward(dec_features.clone())));
+        let amp = self
+            .decode_amp_fc2
+            .forward(gelu(self.decode_amp_fc1.forward(dec_features.clone())));
         // Sin phase head: Linear → Tanh → Linear → Tanh
-        let sin = tanh(self.decode_sin_fc2.forward(tanh(self.decode_sin_fc1.forward(dec_features.clone()))));
+        let sin = tanh(
+            self.decode_sin_fc2
+                .forward(tanh(self.decode_sin_fc1.forward(dec_features.clone()))),
+        );
         // Cos phase head: Linear → Tanh → Linear → Tanh
-        let cos = tanh(self.decode_cos_fc2.forward(tanh(self.decode_cos_fc1.forward(dec_features))));
+        let cos = tanh(
+            self.decode_cos_fc2
+                .forward(tanh(self.decode_cos_fc1.forward(dec_features))),
+        );
 
         (amp, sin, cos)
     }
@@ -310,18 +387,15 @@ impl<B: Backend> NeuroRVQTokenizer<B> {
         let enc_out = self.encode(x_patched.clone(), temporal_ix.clone(), spatial_ix.clone());
 
         // ── Decode ──
-        let (xrec_amp, xrec_sin, xrec_cos) = self.decode(
-            &enc_out.quantized, temporal_ix, spatial_ix,
-        );
+        let (xrec_amp, xrec_sin, xrec_cos) =
+            self.decode(&enc_out.quantized, temporal_ix, spatial_ix);
 
         // ── Inverse FFT reconstruction ──
         // Python: ustd_xrec = (xrec_amp * amp_std) + amp_mean
         //         ustd_xrec = expm1(ustd_xrec)
         //         xrec_signal = real(inverse_fft_cos_sin(ustd_xrec, xrec_sin, xrec_cos))
         let xrec_signal = Self::reconstruct_signal(
-            xrec_amp, xrec_sin, xrec_cos,
-            amp_mean, amp_std,
-            b, n_total, a, t,
+            xrec_amp, xrec_sin, xrec_cos, amp_mean, amp_std, b, n_total, a, t,
         );
 
         // ── Standardize both signals ──
@@ -359,8 +433,14 @@ impl<B: Backend> NeuroRVQTokenizer<B> {
     ///   amp_mean: [B, 1, 1, 1]
     ///   amp_std: [B, 1, 1, 1]
     ///   sin_phase, cos_phase: [B, N, A, T]
-    fn compute_fft_components(x: Tensor<B, 4>) -> (
-        Tensor<B, 4>, Tensor<B, 4>, Tensor<B, 4>, Tensor<B, 4>, Tensor<B, 4>,
+    fn compute_fft_components(
+        x: Tensor<B, 4>,
+    ) -> (
+        Tensor<B, 4>,
+        Tensor<B, 4>,
+        Tensor<B, 4>,
+        Tensor<B, 4>,
+        Tensor<B, 4>,
     ) {
         let [b, n, a, t] = x.dims();
         let device = x.device();
@@ -368,8 +448,8 @@ impl<B: Backend> NeuroRVQTokenizer<B> {
         // Build the DFT matrix: W[k, j] = e^{-2πi·k·j / T}
         // real_part[k,j] = cos(2π·k·j / T)
         // imag_part[k,j] = -sin(2π·k·j / T)
-        let dft_cos = Self::build_dft_cos_matrix(t, &device);  // [T, T]
-        let dft_sin = Self::build_dft_sin_matrix(t, &device);  // [T, T]
+        let dft_cos = Self::build_dft_cos_matrix(t, &device); // [T, T]
+        let dft_sin = Self::build_dft_sin_matrix(t, &device); // [T, T]
 
         // x_flat: [B*N*A, T]
         let x_flat = x.clone().reshape([b * n * a, t]);
@@ -377,7 +457,7 @@ impl<B: Backend> NeuroRVQTokenizer<B> {
         // real = x @ dft_cos^T, imag = x @ dft_sin^T
         // (DFT: X[k] = sum_j x[j] * cos(2π·k·j/T) - i * sum_j x[j] * sin(2π·k·j/T))
         let fft_real = x_flat.clone().matmul(dft_cos.transpose()); // [B*N*A, T]
-        let fft_imag = x_flat.matmul(dft_sin.transpose());         // [B*N*A, T] (this is -imag)
+        let fft_imag = x_flat.matmul(dft_sin.transpose()); // [B*N*A, T] (this is -imag)
 
         // Amplitude: |X[k]| = sqrt(real^2 + imag^2)
         let amp = (fft_real.clone().powf_scalar(2.0) + fft_imag.clone().powf_scalar(2.0))
@@ -435,11 +515,11 @@ impl<B: Backend> NeuroRVQTokenizer<B> {
     ///   imag = ustd_xrec * sin_phase
     ///   signal = real(ifft(complex(real, imag)))
     fn reconstruct_signal(
-        xrec_amp: Tensor<B, 3>,   // [B, N*A, T]
-        xrec_sin: Tensor<B, 3>,   // [B, N*A, T]
-        xrec_cos: Tensor<B, 3>,   // [B, N*A, T]
-        amp_mean: Tensor<B, 4>,   // [B, 1, 1, 1]
-        amp_std: Tensor<B, 4>,    // [B, 1, 1, 1]
+        xrec_amp: Tensor<B, 3>, // [B, N*A, T]
+        xrec_sin: Tensor<B, 3>, // [B, N*A, T]
+        xrec_cos: Tensor<B, 3>, // [B, N*A, T]
+        amp_mean: Tensor<B, 4>, // [B, 1, 1, 1]
+        amp_std: Tensor<B, 4>,  // [B, 1, 1, 1]
         b: usize,
         n: usize,
         a: usize,
@@ -466,21 +546,20 @@ impl<B: Backend> NeuroRVQTokenizer<B> {
         //
         // IFFT: x[j] = (1/T) * sum_k (real[k]*cos(2π·k·j/T) - imag[k]*sin(2π·k·j/T))
         let fft_real = ustd_amp.clone() * xrec_cos; // real part of frequency domain
-        let fft_imag = ustd_amp * xrec_sin;          // imag part of frequency domain
+        let fft_imag = ustd_amp * xrec_sin; // imag part of frequency domain
 
         // Build IDFT matrix
-        let idft_cos = Self::build_dft_cos_matrix(t, &device);  // cos is symmetric
-        let idft_sin = Self::build_dft_sin_matrix(t, &device);  // sin for IDFT uses +sin
+        let idft_cos = Self::build_dft_cos_matrix(t, &device); // cos is symmetric
+        let idft_sin = Self::build_dft_sin_matrix(t, &device); // sin for IDFT uses +sin
 
         // Flatten for matmul: [B*N*A, T]
         let fft_real_flat = fft_real.reshape([b * n * a, t]);
         let fft_imag_flat = fft_imag.reshape([b * n * a, t]);
 
         // IFFT: x[j] = (1/T) * (real @ cos^T - imag @ sin^T)
-        let signal = (
-            fft_real_flat.matmul(idft_cos.transpose()) -
-            fft_imag_flat.matmul(idft_sin.transpose())
-        ).mul_scalar(1.0 / t as f32);
+        let signal = (fft_real_flat.matmul(idft_cos.transpose())
+            - fft_imag_flat.matmul(idft_sin.transpose()))
+        .mul_scalar(1.0 / t as f32);
 
         signal.reshape([b, n * a, t])
     }

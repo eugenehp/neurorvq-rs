@@ -1,3 +1,7 @@
+#![cfg(feature = "burn")]
+
+use burn::nn::Linear;
+use burn::prelude::*;
 /// Load pretrained NeuroRVQ weights from PyTorch .pt files converted to safetensors.
 ///
 /// NeuroRVQ ships weights as .pt (pickle) files. To use in Rust, first convert
@@ -5,14 +9,11 @@
 ///
 /// Alternatively, this module can load raw f32 tensors from a safetensors file
 /// with PyTorch-style state_dict keys.
-
 use std::collections::HashMap;
-use burn::prelude::*;
-use burn::nn::Linear;
 
-use crate::model::tokenizer::NeuroRVQTokenizer;
 use crate::model::norm::NeuroLayerNorm;
 use crate::model::quantizer::NormVectorQuantizer;
+use crate::model::tokenizer::NeuroRVQTokenizer;
 
 // ── WeightMap ─────────────────────────────────────────────────────────────────
 
@@ -59,12 +60,17 @@ impl WeightMap {
         key: &str,
         device: &B::Device,
     ) -> anyhow::Result<Tensor<B, N>> {
-        let (data, shape) = self.tensors.remove(key)
+        let (data, shape) = self
+            .tensors
+            .remove(key)
             .ok_or_else(|| anyhow::anyhow!("weight key not found: {key}"))?;
         if shape.len() != N {
             anyhow::bail!("rank mismatch for {key}: expected {N}, got {}", shape.len());
         }
-        Ok(Tensor::<B, N>::from_data(TensorData::new(data, shape), device))
+        Ok(Tensor::<B, N>::from_data(
+            TensorData::new(data, shape),
+            device,
+        ))
     }
 
     pub fn has(&self, key: &str) -> bool {
@@ -111,17 +117,18 @@ fn set_groupnorm<B: Backend>(gn: &mut burn::nn::GroupNorm<B>, w: Tensor<B, 1>, b
     }
 }
 
-fn set_conv2d_wb<B: Backend>(conv: &mut burn::nn::conv::Conv2d<B>, w: Tensor<B, 4>, b: Tensor<B, 1>) {
+fn set_conv2d_wb<B: Backend>(
+    conv: &mut burn::nn::conv::Conv2d<B>,
+    w: Tensor<B, 4>,
+    b: Tensor<B, 1>,
+) {
     conv.weight = conv.weight.clone().map(|_| w);
     if let Some(ref bias) = conv.bias {
         conv.bias = Some(bias.clone().map(|_| b));
     }
 }
 
-fn set_quantizer_weight<B: Backend>(
-    q: &mut NormVectorQuantizer<B>,
-    w: Tensor<B, 2>,
-) {
+fn set_quantizer_weight<B: Backend>(q: &mut NormVectorQuantizer<B>, w: Tensor<B, 2>) {
     q.weight = q.weight.clone().map(|_| w);
 }
 
@@ -176,38 +183,69 @@ fn load_multi_scale_conv<B: Backend>(
     model: &mut NeuroRVQTokenizer<B>,
     device: &B::Device,
 ) -> anyhow::Result<()> {
-    let conv = model.encoder.multi_scale_conv.as_mut()
+    let conv = model
+        .encoder
+        .multi_scale_conv
+        .as_mut()
         .ok_or_else(|| anyhow::anyhow!("encoder has no multi_scale_conv"))?;
 
     // Each branch has conv1, norm1, conv2, norm2
     let branches = [
-        ("encoder.patch_embed.conv1_1", "encoder.patch_embed.norm1_1",
-         "encoder.patch_embed.conv2_1", "encoder.patch_embed.norm2_1", &mut conv.branch1),
-        ("encoder.patch_embed.conv1_2", "encoder.patch_embed.norm1_2",
-         "encoder.patch_embed.conv2_2", "encoder.patch_embed.norm2_2", &mut conv.branch2),
-        ("encoder.patch_embed.conv1_3", "encoder.patch_embed.norm1_3",
-         "encoder.patch_embed.conv2_3", "encoder.patch_embed.norm2_3", &mut conv.branch3),
-        ("encoder.patch_embed.conv1_4", "encoder.patch_embed.norm1_4",
-         "encoder.patch_embed.conv2_4", "encoder.patch_embed.norm2_4", &mut conv.branch4),
+        (
+            "encoder.patch_embed.conv1_1",
+            "encoder.patch_embed.norm1_1",
+            "encoder.patch_embed.conv2_1",
+            "encoder.patch_embed.norm2_1",
+            &mut conv.branch1,
+        ),
+        (
+            "encoder.patch_embed.conv1_2",
+            "encoder.patch_embed.norm1_2",
+            "encoder.patch_embed.conv2_2",
+            "encoder.patch_embed.norm2_2",
+            &mut conv.branch2,
+        ),
+        (
+            "encoder.patch_embed.conv1_3",
+            "encoder.patch_embed.norm1_3",
+            "encoder.patch_embed.conv2_3",
+            "encoder.patch_embed.norm2_3",
+            &mut conv.branch3,
+        ),
+        (
+            "encoder.patch_embed.conv1_4",
+            "encoder.patch_embed.norm1_4",
+            "encoder.patch_embed.conv2_4",
+            "encoder.patch_embed.norm2_4",
+            &mut conv.branch4,
+        ),
     ];
 
     for (c1_pfx, n1_pfx, c2_pfx, n2_pfx, branch) in branches {
         if let (Ok(w), Ok(b)) = (
             wm.take::<B, 4>(&format!("{c1_pfx}.weight"), device),
             wm.take::<B, 1>(&format!("{c1_pfx}.bias"), device),
-        ) { set_conv2d_wb(&mut branch.conv1, w, b); }
+        ) {
+            set_conv2d_wb(&mut branch.conv1, w, b);
+        }
         if let (Ok(w), Ok(b)) = (
             wm.take::<B, 1>(&format!("{n1_pfx}.weight"), device),
             wm.take::<B, 1>(&format!("{n1_pfx}.bias"), device),
-        ) { set_groupnorm(&mut branch.norm1, w, b); }
+        ) {
+            set_groupnorm(&mut branch.norm1, w, b);
+        }
         if let (Ok(w), Ok(b)) = (
             wm.take::<B, 4>(&format!("{c2_pfx}.weight"), device),
             wm.take::<B, 1>(&format!("{c2_pfx}.bias"), device),
-        ) { set_conv2d_wb(&mut branch.conv2, w, b); }
+        ) {
+            set_conv2d_wb(&mut branch.conv2, w, b);
+        }
         if let (Ok(w), Ok(b)) = (
             wm.take::<B, 1>(&format!("{n2_pfx}.weight"), device),
             wm.take::<B, 1>(&format!("{n2_pfx}.bias"), device),
-        ) { set_groupnorm(&mut branch.norm2, w, b); }
+        ) {
+            set_groupnorm(&mut branch.norm2, w, b);
+        }
     }
     Ok(())
 }
@@ -219,13 +257,19 @@ fn load_transformer_blocks<B: Backend>(
     device: &B::Device,
 ) -> anyhow::Result<()> {
     for (i, block) in fm.blocks.iter_mut().enumerate() {
-        let p = format!("{prefix}.blocks.{i}");
+        let p = if prefix.is_empty() {
+            format!("blocks.{i}")
+        } else {
+            format!("{prefix}.blocks.{i}")
+        };
 
         // norm1
         if let (Ok(w), Ok(b)) = (
             wm.take::<B, 1>(&format!("{p}.norm1.weight"), device),
             wm.take::<B, 1>(&format!("{p}.norm1.bias"), device),
-        ) { set_layernorm(&mut block.norm1, w, b); }
+        ) {
+            set_layernorm(&mut block.norm1, w, b);
+        }
 
         // attention
         if let Ok(w) = wm.take::<B, 2>(&format!("{p}.attn.qkv.weight"), device) {
@@ -244,37 +288,49 @@ fn load_transformer_blocks<B: Backend>(
         if let (Ok(w), Ok(b)) = (
             wm.take::<B, 2>(&format!("{p}.attn.proj.weight"), device),
             wm.take::<B, 1>(&format!("{p}.attn.proj.bias"), device),
-        ) { set_linear_wb(&mut block.attn.proj, w, Some(b)); }
+        ) {
+            set_linear_wb(&mut block.attn.proj, w, Some(b));
+        }
 
         // q_norm, k_norm
         if let Some(ref mut qn) = block.attn.q_norm {
             if let (Ok(w), Ok(b)) = (
                 wm.take::<B, 1>(&format!("{p}.attn.q_norm.weight"), device),
                 wm.take::<B, 1>(&format!("{p}.attn.q_norm.bias"), device),
-            ) { set_layernorm(qn, w, b); }
+            ) {
+                set_layernorm(qn, w, b);
+            }
         }
         if let Some(ref mut kn) = block.attn.k_norm {
             if let (Ok(w), Ok(b)) = (
                 wm.take::<B, 1>(&format!("{p}.attn.k_norm.weight"), device),
                 wm.take::<B, 1>(&format!("{p}.attn.k_norm.bias"), device),
-            ) { set_layernorm(kn, w, b); }
+            ) {
+                set_layernorm(kn, w, b);
+            }
         }
 
         // norm2
         if let (Ok(w), Ok(b)) = (
             wm.take::<B, 1>(&format!("{p}.norm2.weight"), device),
             wm.take::<B, 1>(&format!("{p}.norm2.bias"), device),
-        ) { set_layernorm(&mut block.norm2, w, b); }
+        ) {
+            set_layernorm(&mut block.norm2, w, b);
+        }
 
         // mlp
         if let (Ok(w), Ok(b)) = (
             wm.take::<B, 2>(&format!("{p}.mlp.fc1.weight"), device),
             wm.take::<B, 1>(&format!("{p}.mlp.fc1.bias"), device),
-        ) { set_linear_wb(&mut block.mlp.fc1, w, Some(b)); }
+        ) {
+            set_linear_wb(&mut block.mlp.fc1, w, Some(b));
+        }
         if let (Ok(w), Ok(b)) = (
             wm.take::<B, 2>(&format!("{p}.mlp.fc2.weight"), device),
             wm.take::<B, 1>(&format!("{p}.mlp.fc2.bias"), device),
-        ) { set_linear_wb(&mut block.mlp.fc2, w, Some(b)); }
+        ) {
+            set_linear_wb(&mut block.mlp.fc2, w, Some(b));
+        }
 
         // gamma_1, gamma_2
         if let Ok(g) = wm.take::<B, 1>(&format!("{p}.gamma_1"), device) {
@@ -320,16 +376,43 @@ fn load_encoder_heads<B: Backend>(
         (&mut fm.fc_norm_2, &mut fm.head_2),
         (&mut fm.fc_norm_3, &mut fm.head_3),
         (&mut fm.fc_norm_4, &mut fm.head_4),
-    ].into_iter().enumerate() {
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let n = i + 1;
+        let fc_norm_w = if prefix.is_empty() {
+            format!("fc_norm_{n}.weight")
+        } else {
+            format!("{prefix}.fc_norm_{n}.weight")
+        };
+        let fc_norm_b = if prefix.is_empty() {
+            format!("fc_norm_{n}.bias")
+        } else {
+            format!("{prefix}.fc_norm_{n}.bias")
+        };
+        let head_w = if prefix.is_empty() {
+            format!("head_{n}.weight")
+        } else {
+            format!("{prefix}.head_{n}.weight")
+        };
+        let head_b = if prefix.is_empty() {
+            format!("head_{n}.bias")
+        } else {
+            format!("{prefix}.head_{n}.bias")
+        };
         if let (Ok(w), Ok(b)) = (
-            wm.take::<B, 1>(&format!("{prefix}.fc_norm_{n}.weight"), device),
-            wm.take::<B, 1>(&format!("{prefix}.fc_norm_{n}.bias"), device),
-        ) { set_layernorm(norm, w, b); }
+            wm.take::<B, 1>(&fc_norm_w, device),
+            wm.take::<B, 1>(&fc_norm_b, device),
+        ) {
+            set_layernorm(norm, w, b);
+        }
         if let (Ok(w), Ok(b)) = (
-            wm.take::<B, 2>(&format!("{prefix}.head_{n}.weight"), device),
-            wm.take::<B, 1>(&format!("{prefix}.head_{n}.bias"), device),
-        ) { set_linear_wb(head, w, Some(b)); }
+            wm.take::<B, 2>(&head_w, device),
+            wm.take::<B, 1>(&head_b, device),
+        ) {
+            set_linear_wb(head, w, Some(b));
+        }
     }
     Ok(())
 }
@@ -344,13 +427,18 @@ fn load_decoder_patch_embeds<B: Backend>(
         &mut model.decoder.patch_embed_2,
         &mut model.decoder.patch_embed_3,
         &mut model.decoder.patch_embed_4,
-    ].into_iter().enumerate() {
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let n = i + 1;
         if let Some(ref mut pe) = pe_opt {
             if let (Ok(w), Ok(b)) = (
                 wm.take::<B, 4>(&format!("decoder.patch_embed_{n}.proj.weight"), device),
                 wm.take::<B, 1>(&format!("decoder.patch_embed_{n}.proj.bias"), device),
-            ) { set_conv2d_wb(&mut pe.proj, w, b); }
+            ) {
+                set_conv2d_wb(&mut pe.proj, w, b);
+            }
         }
     }
     Ok(())
@@ -362,10 +450,26 @@ fn load_encode_task_layers<B: Backend>(
     device: &B::Device,
 ) -> anyhow::Result<()> {
     let heads = [
-        (&mut model.encode_head_1_fc1, &mut model.encode_head_1_fc2, 1),
-        (&mut model.encode_head_2_fc1, &mut model.encode_head_2_fc2, 2),
-        (&mut model.encode_head_3_fc1, &mut model.encode_head_3_fc2, 3),
-        (&mut model.encode_head_4_fc1, &mut model.encode_head_4_fc2, 4),
+        (
+            &mut model.encode_head_1_fc1,
+            &mut model.encode_head_1_fc2,
+            1,
+        ),
+        (
+            &mut model.encode_head_2_fc1,
+            &mut model.encode_head_2_fc2,
+            2,
+        ),
+        (
+            &mut model.encode_head_3_fc1,
+            &mut model.encode_head_3_fc2,
+            3,
+        ),
+        (
+            &mut model.encode_head_4_fc1,
+            &mut model.encode_head_4_fc2,
+            4,
+        ),
     ];
 
     for (fc1, fc2, n) in heads {
@@ -373,11 +477,15 @@ fn load_encode_task_layers<B: Backend>(
         if let (Ok(w), Ok(b)) = (
             wm.take::<B, 2>(&format!("encode_task_layer_{n}.0.weight"), device),
             wm.take::<B, 1>(&format!("encode_task_layer_{n}.0.bias"), device),
-        ) { set_linear_wb(fc1, w, Some(b)); }
+        ) {
+            set_linear_wb(fc1, w, Some(b));
+        }
         if let (Ok(w), Ok(b)) = (
             wm.take::<B, 2>(&format!("encode_task_layer_{n}.2.weight"), device),
             wm.take::<B, 1>(&format!("encode_task_layer_{n}.2.bias"), device),
-        ) { set_linear_wb(fc2, w, Some(b)); }
+        ) {
+            set_linear_wb(fc2, w, Some(b));
+        }
     }
     Ok(())
 }
@@ -391,31 +499,43 @@ fn load_decode_task_layers<B: Backend>(
     if let (Ok(w), Ok(b)) = (
         wm.take::<B, 2>("decode_task_layer_amplitude.0.weight", device),
         wm.take::<B, 1>("decode_task_layer_amplitude.0.bias", device),
-    ) { set_linear_wb(&mut model.decode_amp_fc1, w, Some(b)); }
+    ) {
+        set_linear_wb(&mut model.decode_amp_fc1, w, Some(b));
+    }
     if let (Ok(w), Ok(b)) = (
         wm.take::<B, 2>("decode_task_layer_amplitude.2.weight", device),
         wm.take::<B, 1>("decode_task_layer_amplitude.2.bias", device),
-    ) { set_linear_wb(&mut model.decode_amp_fc2, w, Some(b)); }
+    ) {
+        set_linear_wb(&mut model.decode_amp_fc2, w, Some(b));
+    }
 
     // Sin: decode_task_layer_angle_sin.0, .2 (with Tanh in between and at end)
     if let (Ok(w), Ok(b)) = (
         wm.take::<B, 2>("decode_task_layer_angle_sin.0.weight", device),
         wm.take::<B, 1>("decode_task_layer_angle_sin.0.bias", device),
-    ) { set_linear_wb(&mut model.decode_sin_fc1, w, Some(b)); }
+    ) {
+        set_linear_wb(&mut model.decode_sin_fc1, w, Some(b));
+    }
     if let (Ok(w), Ok(b)) = (
         wm.take::<B, 2>("decode_task_layer_angle_sin.2.weight", device),
         wm.take::<B, 1>("decode_task_layer_angle_sin.2.bias", device),
-    ) { set_linear_wb(&mut model.decode_sin_fc2, w, Some(b)); }
+    ) {
+        set_linear_wb(&mut model.decode_sin_fc2, w, Some(b));
+    }
 
     // Cos: decode_task_layer_angle_cos.0, .2
     if let (Ok(w), Ok(b)) = (
         wm.take::<B, 2>("decode_task_layer_angle_cos.0.weight", device),
         wm.take::<B, 1>("decode_task_layer_angle_cos.0.bias", device),
-    ) { set_linear_wb(&mut model.decode_cos_fc1, w, Some(b)); }
+    ) {
+        set_linear_wb(&mut model.decode_cos_fc1, w, Some(b));
+    }
     if let (Ok(w), Ok(b)) = (
         wm.take::<B, 2>("decode_task_layer_angle_cos.2.weight", device),
         wm.take::<B, 1>("decode_task_layer_angle_cos.2.bias", device),
-    ) { set_linear_wb(&mut model.decode_cos_fc2, w, Some(b)); }
+    ) {
+        set_linear_wb(&mut model.decode_cos_fc2, w, Some(b));
+    }
     Ok(())
 }
 
@@ -460,15 +580,14 @@ pub fn load_foundation_model<B: Backend>(
     // Multi-scale conv (encoder mode)
     load_fm_multi_scale_conv(wm, model, device)?;
 
-    // Transformer blocks
-    load_transformer_blocks(wm, "", model, device)
-        .or_else(|_| load_transformer_blocks_unprefixed(wm, model, device))?;
+    // Transformer blocks (unprefixed keys: blocks.{i}.*)
+    load_transformer_blocks(wm, "", model, device)?;
 
     // Positional embeddings
     load_pos_embeds_fm(wm, model, device)?;
 
-    // Output heads
-    load_encoder_heads_fm(wm, model, device)?;
+    // Output heads (fc_norm_{n}, head_{n})
+    load_encoder_heads(wm, "", model, device)?;
 
     Ok(())
 }
@@ -484,105 +603,60 @@ fn load_fm_multi_scale_conv<B: Backend>(
     };
 
     let branches = [
-        ("patch_embed.conv1_1", "patch_embed.norm1_1",
-         "patch_embed.conv2_1", "patch_embed.norm2_1", &mut conv.branch1),
-        ("patch_embed.conv1_2", "patch_embed.norm1_2",
-         "patch_embed.conv2_2", "patch_embed.norm2_2", &mut conv.branch2),
-        ("patch_embed.conv1_3", "patch_embed.norm1_3",
-         "patch_embed.conv2_3", "patch_embed.norm2_3", &mut conv.branch3),
-        ("patch_embed.conv1_4", "patch_embed.norm1_4",
-         "patch_embed.conv2_4", "patch_embed.norm2_4", &mut conv.branch4),
+        (
+            "patch_embed.conv1_1",
+            "patch_embed.norm1_1",
+            "patch_embed.conv2_1",
+            "patch_embed.norm2_1",
+            &mut conv.branch1,
+        ),
+        (
+            "patch_embed.conv1_2",
+            "patch_embed.norm1_2",
+            "patch_embed.conv2_2",
+            "patch_embed.norm2_2",
+            &mut conv.branch2,
+        ),
+        (
+            "patch_embed.conv1_3",
+            "patch_embed.norm1_3",
+            "patch_embed.conv2_3",
+            "patch_embed.norm2_3",
+            &mut conv.branch3,
+        ),
+        (
+            "patch_embed.conv1_4",
+            "patch_embed.norm1_4",
+            "patch_embed.conv2_4",
+            "patch_embed.norm2_4",
+            &mut conv.branch4,
+        ),
     ];
 
     for (c1_pfx, n1_pfx, c2_pfx, n2_pfx, branch) in branches {
         if let (Ok(w), Ok(b)) = (
             wm.take::<B, 4>(&format!("{c1_pfx}.weight"), device),
             wm.take::<B, 1>(&format!("{c1_pfx}.bias"), device),
-        ) { set_conv2d_wb(&mut branch.conv1, w, b); }
+        ) {
+            set_conv2d_wb(&mut branch.conv1, w, b);
+        }
         if let (Ok(w), Ok(b)) = (
             wm.take::<B, 1>(&format!("{n1_pfx}.weight"), device),
             wm.take::<B, 1>(&format!("{n1_pfx}.bias"), device),
-        ) { set_groupnorm(&mut branch.norm1, w, b); }
+        ) {
+            set_groupnorm(&mut branch.norm1, w, b);
+        }
         if let (Ok(w), Ok(b)) = (
             wm.take::<B, 4>(&format!("{c2_pfx}.weight"), device),
             wm.take::<B, 1>(&format!("{c2_pfx}.bias"), device),
-        ) { set_conv2d_wb(&mut branch.conv2, w, b); }
+        ) {
+            set_conv2d_wb(&mut branch.conv2, w, b);
+        }
         if let (Ok(w), Ok(b)) = (
             wm.take::<B, 1>(&format!("{n2_pfx}.weight"), device),
             wm.take::<B, 1>(&format!("{n2_pfx}.bias"), device),
-        ) { set_groupnorm(&mut branch.norm2, w, b); }
-    }
-    Ok(())
-}
-
-/// Load transformer blocks with no prefix (standalone FM).
-fn load_transformer_blocks_unprefixed<B: Backend>(
-    wm: &mut WeightMap,
-    fm: &mut crate::model::foundation::NeuroRVQFM<B>,
-    device: &B::Device,
-) -> anyhow::Result<()> {
-    for (i, block) in fm.blocks.iter_mut().enumerate() {
-        let p = format!("blocks.{i}");
-
-        if let (Ok(w), Ok(b)) = (
-            wm.take::<B, 1>(&format!("{p}.norm1.weight"), device),
-            wm.take::<B, 1>(&format!("{p}.norm1.bias"), device),
-        ) { set_layernorm(&mut block.norm1, w, b); }
-
-        if let Ok(w) = wm.take::<B, 2>(&format!("{p}.attn.qkv.weight"), device) {
-            set_linear_no_bias(&mut block.attn.qkv, w);
-        }
-        if let Ok(b) = wm.take::<B, 1>(&format!("{p}.attn.q_bias"), device) {
-            if let Some(ref qb) = block.attn.q_bias {
-                block.attn.q_bias = Some(qb.clone().map(|_| b));
-            }
-        }
-        if let Ok(b) = wm.take::<B, 1>(&format!("{p}.attn.v_bias"), device) {
-            if let Some(ref vb) = block.attn.v_bias {
-                block.attn.v_bias = Some(vb.clone().map(|_| b));
-            }
-        }
-        if let (Ok(w), Ok(b)) = (
-            wm.take::<B, 2>(&format!("{p}.attn.proj.weight"), device),
-            wm.take::<B, 1>(&format!("{p}.attn.proj.bias"), device),
-        ) { set_linear_wb(&mut block.attn.proj, w, Some(b)); }
-
-        if let Some(ref mut qn) = block.attn.q_norm {
-            if let (Ok(w), Ok(b)) = (
-                wm.take::<B, 1>(&format!("{p}.attn.q_norm.weight"), device),
-                wm.take::<B, 1>(&format!("{p}.attn.q_norm.bias"), device),
-            ) { set_layernorm(qn, w, b); }
-        }
-        if let Some(ref mut kn) = block.attn.k_norm {
-            if let (Ok(w), Ok(b)) = (
-                wm.take::<B, 1>(&format!("{p}.attn.k_norm.weight"), device),
-                wm.take::<B, 1>(&format!("{p}.attn.k_norm.bias"), device),
-            ) { set_layernorm(kn, w, b); }
-        }
-
-        if let (Ok(w), Ok(b)) = (
-            wm.take::<B, 1>(&format!("{p}.norm2.weight"), device),
-            wm.take::<B, 1>(&format!("{p}.norm2.bias"), device),
-        ) { set_layernorm(&mut block.norm2, w, b); }
-
-        if let (Ok(w), Ok(b)) = (
-            wm.take::<B, 2>(&format!("{p}.mlp.fc1.weight"), device),
-            wm.take::<B, 1>(&format!("{p}.mlp.fc1.bias"), device),
-        ) { set_linear_wb(&mut block.mlp.fc1, w, Some(b)); }
-        if let (Ok(w), Ok(b)) = (
-            wm.take::<B, 2>(&format!("{p}.mlp.fc2.weight"), device),
-            wm.take::<B, 1>(&format!("{p}.mlp.fc2.bias"), device),
-        ) { set_linear_wb(&mut block.mlp.fc2, w, Some(b)); }
-
-        if let Ok(g) = wm.take::<B, 1>(&format!("{p}.gamma_1"), device) {
-            if let Some(ref g1) = block.gamma_1 {
-                block.gamma_1 = Some(g1.clone().map(|_| g));
-            }
-        }
-        if let Ok(g) = wm.take::<B, 1>(&format!("{p}.gamma_2"), device) {
-            if let Some(ref g2) = block.gamma_2 {
-                block.gamma_2 = Some(g2.clone().map(|_| g));
-            }
+        ) {
+            set_groupnorm(&mut branch.norm2, w, b);
         }
     }
     Ok(())
@@ -602,30 +676,6 @@ fn load_pos_embeds_fm<B: Backend>(
     }
     if let Ok(t) = wm.take::<B, 2>("time_embed", device) {
         fm.time_embed = fm.time_embed.clone().map(|_| t);
-    }
-    Ok(())
-}
-
-fn load_encoder_heads_fm<B: Backend>(
-    wm: &mut WeightMap,
-    fm: &mut crate::model::foundation::NeuroRVQFM<B>,
-    device: &B::Device,
-) -> anyhow::Result<()> {
-    for (i, (norm, head)) in [
-        (&mut fm.fc_norm_1, &mut fm.head_1),
-        (&mut fm.fc_norm_2, &mut fm.head_2),
-        (&mut fm.fc_norm_3, &mut fm.head_3),
-        (&mut fm.fc_norm_4, &mut fm.head_4),
-    ].into_iter().enumerate() {
-        let n = i + 1;
-        if let (Ok(w), Ok(b)) = (
-            wm.take::<B, 1>(&format!("fc_norm_{n}.weight"), device),
-            wm.take::<B, 1>(&format!("fc_norm_{n}.bias"), device),
-        ) { set_layernorm(norm, w, b); }
-        if let (Ok(w), Ok(b)) = (
-            wm.take::<B, 2>(&format!("head_{n}.weight"), device),
-            wm.take::<B, 1>(&format!("head_{n}.bias"), device),
-        ) { set_linear_wb(head, w, Some(b)); }
     }
     Ok(())
 }

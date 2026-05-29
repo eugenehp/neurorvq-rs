@@ -1,3 +1,10 @@
+use crate::config::Modality;
+use crate::model::encoder_block::TransformerBlock;
+use crate::model::multi_scale_conv::MultiScaleTemporalConv;
+use crate::model::norm::NeuroLayerNorm;
+use crate::model::patch_embed::PatchEmbed;
+use burn::module::{Param, ParamId};
+use burn::nn::{Linear, LinearConfig};
 /// NeuroRVQ Foundation Model (NeuroRVQFM).
 ///
 /// Python: `NeuroRVQFM` class in NeuroRVQ.py
@@ -13,15 +20,7 @@
 ///   2. Spatial + temporal positional embeddings
 ///   3. Transformer blocks
 ///   4. Output head per branch (LayerNorm + Linear)
-
 use burn::prelude::*;
-use burn::module::{Param, ParamId};
-use burn::nn::{Linear, LinearConfig};
-use crate::config::Modality;
-use crate::model::norm::NeuroLayerNorm;
-use crate::model::encoder_block::TransformerBlock;
-use crate::model::multi_scale_conv::MultiScaleTemporalConv;
-use crate::model::patch_embed::PatchEmbed;
 
 #[derive(Module, Debug)]
 pub struct NeuroRVQFM<B: Backend> {
@@ -76,9 +75,21 @@ impl<B: Backend> NeuroRVQFM<B> {
         device: &B::Device,
     ) -> Self {
         Self::new_with_modality(
-            n_patches, patch_size, in_chans, out_chans, num_classes,
-            embed_dim, depth, num_heads, mlp_ratio, qkv_bias, init_values,
-            n_global_electrodes, use_as_encoder, Modality::EEG, device,
+            n_patches,
+            patch_size,
+            in_chans,
+            out_chans,
+            num_classes,
+            embed_dim,
+            depth,
+            num_heads,
+            mlp_ratio,
+            qkv_bias,
+            init_values,
+            n_global_electrodes,
+            use_as_encoder,
+            Modality::EEG,
+            device,
         )
     }
 
@@ -101,7 +112,15 @@ impl<B: Backend> NeuroRVQFM<B> {
         device: &B::Device,
     ) -> Self {
         let (multi_scale_conv, pe1, pe2, pe3, pe4) = if use_as_encoder {
-            (Some(MultiScaleTemporalConv::new_with_modality(1, out_chans, modality, device)), None, None, None, None)
+            (
+                Some(MultiScaleTemporalConv::new_with_modality(
+                    1, out_chans, modality, device,
+                )),
+                None,
+                None,
+                None,
+                None,
+            )
         } else {
             (
                 None,
@@ -112,10 +131,8 @@ impl<B: Backend> NeuroRVQFM<B> {
             )
         };
 
-        let cls_token = Param::initialized(
-            ParamId::new(),
-            Tensor::zeros([1, 1, embed_dim], device),
-        );
+        let cls_token =
+            Param::initialized(ParamId::new(), Tensor::zeros([1, 1, embed_dim], device));
         let pos_embed = Param::initialized(
             ParamId::new(),
             Tensor::zeros([n_global_electrodes + 1, embed_dim], device),
@@ -129,13 +146,25 @@ impl<B: Backend> NeuroRVQFM<B> {
         let use_qk_norm = true; // NeuroRVQ uses qk_norm=partial(nn.LayerNorm, eps=1e-6)
 
         let blocks = (0..depth)
-            .map(|_| TransformerBlock::new(
-                embed_dim, num_heads, mlp_ratio, qkv_bias,
-                use_qk_norm, init_values, norm_eps, device,
-            ))
+            .map(|_| {
+                TransformerBlock::new(
+                    embed_dim,
+                    num_heads,
+                    mlp_ratio,
+                    qkv_bias,
+                    use_qk_norm,
+                    init_values,
+                    norm_eps,
+                    device,
+                )
+            })
             .collect();
 
-        let out_dim = if num_classes > 0 { num_classes } else { embed_dim };
+        let out_dim = if num_classes > 0 {
+            num_classes
+        } else {
+            embed_dim
+        };
 
         Self {
             multi_scale_conv,
@@ -148,13 +177,21 @@ impl<B: Backend> NeuroRVQFM<B> {
             time_embed,
             blocks,
             fc_norm_1: NeuroLayerNorm::new(embed_dim, norm_eps, device),
-            head_1: LinearConfig::new(embed_dim, out_dim).with_bias(true).init(device),
+            head_1: LinearConfig::new(embed_dim, out_dim)
+                .with_bias(true)
+                .init(device),
             fc_norm_2: NeuroLayerNorm::new(embed_dim, norm_eps, device),
-            head_2: LinearConfig::new(embed_dim, out_dim).with_bias(true).init(device),
+            head_2: LinearConfig::new(embed_dim, out_dim)
+                .with_bias(true)
+                .init(device),
             fc_norm_3: NeuroLayerNorm::new(embed_dim, norm_eps, device),
-            head_3: LinearConfig::new(embed_dim, out_dim).with_bias(true).init(device),
+            head_3: LinearConfig::new(embed_dim, out_dim)
+                .with_bias(true)
+                .init(device),
             fc_norm_4: NeuroLayerNorm::new(embed_dim, norm_eps, device),
-            head_4: LinearConfig::new(embed_dim, out_dim).with_bias(true).init(device),
+            head_4: LinearConfig::new(embed_dim, out_dim)
+                .with_bias(true)
+                .init(device),
             embed_dim,
             patch_size,
             use_as_encoder,
@@ -195,15 +232,12 @@ impl<B: Backend> NeuroRVQFM<B> {
 
             // Add spatial embeddings
             let spat_ix = Self::pad_spatial_ix(spatial_ix.clone(), &device);
-            let spatial_emb = Self::gather_embeddings_2d(
-                &self.pos_embed.val(), spat_ix, &device,
-            );
+            let spatial_emb = Self::gather_embeddings_2d(&self.pos_embed.val(), spat_ix, &device);
             let x = x + spatial_emb;
 
             // Add temporal embeddings (skip cls position)
-            let temporal_emb = Self::gather_embeddings_2d(
-                &self.time_embed.val(), temporal_ix.clone(), &device,
-            );
+            let temporal_emb =
+                Self::gather_embeddings_2d(&self.time_embed.val(), temporal_ix.clone(), &device);
             let mut x = x;
             // x[:, 1:, :] += temporal_emb
             let x_cls = x.clone().narrow(1, 0, 1);
@@ -260,14 +294,10 @@ impl<B: Backend> NeuroRVQFM<B> {
 
         // Add spatial + temporal embeddings
         let spat_ix = Self::pad_spatial_ix(spatial_ix, &device);
-        let spatial_emb = Self::gather_embeddings_2d(
-            &self.pos_embed.val(), spat_ix, &device,
-        );
+        let spatial_emb = Self::gather_embeddings_2d(&self.pos_embed.val(), spat_ix, &device);
         let x = x + spatial_emb;
 
-        let temporal_emb = Self::gather_embeddings_2d(
-            &self.time_embed.val(), temporal_ix, &device,
-        );
+        let temporal_emb = Self::gather_embeddings_2d(&self.time_embed.val(), temporal_ix, &device);
         let x_cls = x.clone().narrow(1, 0, 1);
         let x_rest = x.narrow(1, 1, seq_len) + temporal_emb;
         let mut x = Tensor::cat(vec![x_cls, x_rest], 1);
@@ -291,10 +321,7 @@ impl<B: Backend> NeuroRVQFM<B> {
     }
 
     /// Pad spatial_embedding_ix with 0 for cls token.
-    fn pad_spatial_ix(
-        spatial_ix: Tensor<B, 2, Int>,
-        device: &B::Device,
-    ) -> Tensor<B, 2, Int> {
+    fn pad_spatial_ix(spatial_ix: Tensor<B, 2, Int>, device: &B::Device) -> Tensor<B, 2, Int> {
         let [b, _n] = spatial_ix.dims();
         let zero_col = Tensor::<B, 2, Int>::zeros([b, 1], device);
         Tensor::cat(vec![zero_col, spatial_ix], 1) // [B, n+1]

@@ -1,5 +1,4 @@
 /// Model configuration for NeuroRVQ, parsed from YAML config files.
-
 use serde::Deserialize;
 
 /// Top-level config matching the NeuroRVQ YAML flags files.
@@ -91,22 +90,54 @@ pub struct NeuroRVQConfig {
     pub n_global_electrodes: usize,
 }
 
-fn default_patch_size() -> usize { 200 }
-fn default_n_patches() -> usize { 256 }
-fn default_num_classes() -> usize { 5 }
-fn default_n_code() -> usize { 8192 }
-fn default_code_dim() -> usize { 128 }
-fn default_embed_dim() -> usize { 200 }
-fn default_in_chans_encoder() -> usize { 1 }
-fn default_out_chans_encoder() -> usize { 8 }
-fn default_depth_encoder() -> usize { 12 }
-fn default_depth_decoder() -> usize { 3 }
-fn default_decoder_out_dim() -> usize { 200 }
-fn default_num_heads() -> usize { 10 }
-fn default_mlp_ratio() -> f64 { 4.0 }
-fn default_true() -> bool { true }
-fn default_init_scale() -> f64 { 0.001 }
-fn default_n_global_electrodes() -> usize { 103 }
+fn default_patch_size() -> usize {
+    200
+}
+fn default_n_patches() -> usize {
+    256
+}
+fn default_num_classes() -> usize {
+    5
+}
+fn default_n_code() -> usize {
+    8192
+}
+fn default_code_dim() -> usize {
+    128
+}
+fn default_embed_dim() -> usize {
+    200
+}
+fn default_in_chans_encoder() -> usize {
+    1
+}
+fn default_out_chans_encoder() -> usize {
+    8
+}
+fn default_depth_encoder() -> usize {
+    12
+}
+fn default_depth_decoder() -> usize {
+    3
+}
+fn default_decoder_out_dim() -> usize {
+    200
+}
+fn default_num_heads() -> usize {
+    10
+}
+fn default_mlp_ratio() -> f64 {
+    4.0
+}
+fn default_true() -> bool {
+    true
+}
+fn default_init_scale() -> f64 {
+    0.001
+}
+fn default_n_global_electrodes() -> usize {
+    103
+}
 
 impl Default for NeuroRVQConfig {
     fn default() -> Self {
@@ -197,9 +228,15 @@ impl NeuroRVQConfig {
         override_field!(out_chans_encoder);
         override_field!(depth_encoder);
         override_field!(depth_decoder);
+        if let Some(v) = ovr.depth_second_stage {
+            self.depth_second_stage = Some(v);
+        }
         override_field!(num_heads_tokenizer);
         override_field!(mlp_ratio_tokenizer);
         override_field!(init_values_tokenizer);
+        if let Some(v) = ovr.init_values_second_stage {
+            self.init_values_second_stage = Some(v);
+        }
         override_field!(init_scale_tokenizer);
         override_field!(n_global_electrodes);
         if let Some(v) = ovr.qkv_bias_tokenizer {
@@ -219,32 +256,38 @@ impl NeuroRVQConfig {
 
     /// Get second-stage FM num_heads.
     pub fn fm_num_heads(&self) -> usize {
-        self.num_heads_second_stage.unwrap_or(self.num_heads_tokenizer)
+        self.num_heads_second_stage
+            .unwrap_or(self.num_heads_tokenizer)
     }
 
     /// Get second-stage FM mlp_ratio.
     pub fn fm_mlp_ratio(&self) -> f64 {
-        self.mlp_ratio_second_stage.unwrap_or(self.mlp_ratio_tokenizer)
+        self.mlp_ratio_second_stage
+            .unwrap_or(self.mlp_ratio_tokenizer)
     }
 
     /// Get second-stage FM qkv_bias.
     pub fn fm_qkv_bias(&self) -> bool {
-        self.qkv_bias_second_stage.unwrap_or(self.qkv_bias_tokenizer)
+        self.qkv_bias_second_stage
+            .unwrap_or(self.qkv_bias_tokenizer)
     }
 
     /// Get second-stage FM init_values.
     pub fn fm_init_values(&self) -> f64 {
-        self.init_values_second_stage.unwrap_or(self.init_values_tokenizer)
+        self.init_values_second_stage
+            .unwrap_or(self.init_values_tokenizer)
     }
 
     /// Get second-stage FM init_scale.
     pub fn fm_init_scale(&self) -> f64 {
-        self.init_scale_second_stage.unwrap_or(self.init_scale_tokenizer)
+        self.init_scale_second_stage
+            .unwrap_or(self.init_scale_tokenizer)
     }
 
     /// Get second-stage FM out_chans.
     pub fn fm_out_chans(&self) -> usize {
-        self.out_chans_second_stage.unwrap_or(self.out_chans_encoder)
+        self.out_chans_second_stage
+            .unwrap_or(self.out_chans_encoder)
     }
 
     /// Get second-stage FM in_chans.
@@ -278,7 +321,9 @@ impl std::str::FromStr for Modality {
             "EEG" => Ok(Modality::EEG),
             "EMG" => Ok(Modality::EMG),
             "ECG" => Ok(Modality::ECG),
-            _ => Err(anyhow::anyhow!("Unknown modality: {s}. Must be EEG, EMG, or ECG.")),
+            _ => Err(anyhow::anyhow!(
+                "Unknown modality: {s}. Must be EEG, EMG, or ECG."
+            )),
         }
     }
 }
@@ -298,10 +343,12 @@ pub struct ConfigOverrides {
     pub out_chans_encoder: Option<usize>,
     pub depth_encoder: Option<usize>,
     pub depth_decoder: Option<usize>,
+    pub depth_second_stage: Option<usize>,
     pub num_heads_tokenizer: Option<usize>,
     pub mlp_ratio_tokenizer: Option<f64>,
     pub qkv_bias_tokenizer: Option<bool>,
     pub init_values_tokenizer: Option<f64>,
+    pub init_values_second_stage: Option<f64>,
     pub init_scale_tokenizer: Option<f64>,
     pub n_global_electrodes: Option<usize>,
 }
@@ -357,17 +404,26 @@ mod tests {
 
     #[test]
     fn test_modality_detection() {
-        assert_eq!(detect_modality_from_path("flags/NeuroRVQ_EEG_v1.yml"), Some("EEG".into()));
-        assert_eq!(detect_modality_from_path("flags/NeuroRVQ_ECG_v1.yml"), Some("ECG".into()));
-        assert_eq!(detect_modality_from_path("flags/NeuroRVQ_EMG_v1.yml"), Some("EMG".into()));
+        assert_eq!(
+            detect_modality_from_path("flags/NeuroRVQ_EEG_v1.yml"),
+            Some("EEG".into())
+        );
+        assert_eq!(
+            detect_modality_from_path("flags/NeuroRVQ_ECG_v1.yml"),
+            Some("ECG".into())
+        );
+        assert_eq!(
+            detect_modality_from_path("flags/NeuroRVQ_EMG_v1.yml"),
+            Some("EMG".into())
+        );
         assert_eq!(detect_modality_from_path("some/random/config.yml"), None);
     }
 
     #[test]
     fn test_modality_override() {
-        let cfg = NeuroRVQConfig::from_yaml_with_modality(
-            "flags/NeuroRVQ_EEG_v1.yml", Modality::EMG
-        ).unwrap();
+        let cfg =
+            NeuroRVQConfig::from_yaml_with_modality("flags/NeuroRVQ_EEG_v1.yml", Modality::EMG)
+                .unwrap();
         assert_eq!(cfg.resolve_modality(), Modality::EMG);
     }
 

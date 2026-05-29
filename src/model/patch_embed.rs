@@ -1,10 +1,9 @@
+use burn::nn::conv::{Conv2d, Conv2dConfig};
 /// Patch Embedding for the decoder side of NeuroRVQ.
 ///
 /// Python: `PatchEmbed` in NeuroRVQ.py
 ///   Projects each codebook vector to the patch latent space via Conv2d(in_chans, embed_dim, 1x1).
-
 use burn::prelude::*;
-use burn::nn::conv::{Conv2d, Conv2dConfig};
 
 #[derive(Module, Debug)]
 pub struct PatchEmbed<B: Backend> {

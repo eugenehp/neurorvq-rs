@@ -2,26 +2,20 @@
 ///
 /// Each modality has a global channel list used during pre-training.
 /// Channel names are lowercased for matching.
-
 use crate::config::Modality;
 
 // ── EEG (103 channels) ───────────────────────────────────────────────────────
 
 /// Global channel vocabulary from NeuroRVQ_EEG_v1 (103 channels).
 pub const EEG_CHANNELS: &[&str] = &[
-    "a1", "a2", "af3", "af4", "af7", "af8", "afz", "c1", "c2",
-    "c3", "c4", "c5", "c6", "ccp1", "ccp2", "ccp3", "ccp4",
-    "ccp5", "ccp6", "ccp7", "ccp8", "cfc1", "cfc2", "cfc3",
-    "cfc4", "cfc5", "cfc6", "cfc7", "cfc8", "cp1", "cp2",
-    "cp3", "cp4", "cp5", "cp6", "cpz", "cz", "eog", "f1",
-    "f10", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9",
-    "fc1", "fc2", "fc3", "fc4", "fc5", "fc6", "fcz", "fp1",
-    "fp2", "fpz", "ft7", "ft8", "fz", "iz", "loc", "o1", "o2",
-    "oz", "p08", "p1", "p10", "p2", "p3", "p4", "p5", "p6",
-    "p7", "p8", "p9", "po1", "po10", "po2", "po3", "po4",
-    "po7", "po8", "po9", "poz", "pz", "roc", "sp1", "sp2",
-    "t1", "t10", "t2", "t3", "t4", "t5", "t6", "t7", "t8",
-    "t9", "tp10", "tp7", "tp8", "tp9",
+    "a1", "a2", "af3", "af4", "af7", "af8", "afz", "c1", "c2", "c3", "c4", "c5", "c6", "ccp1",
+    "ccp2", "ccp3", "ccp4", "ccp5", "ccp6", "ccp7", "ccp8", "cfc1", "cfc2", "cfc3", "cfc4", "cfc5",
+    "cfc6", "cfc7", "cfc8", "cp1", "cp2", "cp3", "cp4", "cp5", "cp6", "cpz", "cz", "eog", "f1",
+    "f10", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "fc1", "fc2", "fc3", "fc4", "fc5",
+    "fc6", "fcz", "fp1", "fp2", "fpz", "ft7", "ft8", "fz", "iz", "loc", "o1", "o2", "oz", "p08",
+    "p1", "p10", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9", "po1", "po10", "po2", "po3",
+    "po4", "po7", "po8", "po9", "poz", "pz", "roc", "sp1", "sp2", "t1", "t10", "t2", "t3", "t4",
+    "t5", "t6", "t7", "t8", "t9", "tp10", "tp7", "tp8", "tp9",
 ];
 
 pub const EEG_VOCAB_SIZE: usize = 103;
@@ -30,9 +24,7 @@ pub const EEG_VOCAB_SIZE: usize = 103;
 
 /// Global channel vocabulary from NeuroRVQ_ECG_v1 (15 channels).
 pub const ECG_CHANNELS: &[&str] = &[
-    "avf", "avl", "avr", "i", "ii", "iii",
-    "v1", "v2", "v3", "v4", "v5", "v6",
-    "vx", "vy", "vz",
+    "avf", "avl", "avr", "i", "ii", "iii", "v1", "v2", "v3", "v4", "v5", "v6", "vx", "vy", "vz",
 ];
 
 pub const ECG_VOCAB_SIZE: usize = 15;
@@ -41,8 +33,8 @@ pub const ECG_VOCAB_SIZE: usize = 15;
 
 /// Global channel vocabulary from NeuroRVQ_EMG_v1 (16 channels).
 pub const EMG_CHANNELS: &[&str] = &[
-    "c1", "c10", "c11", "c12", "c13", "c14", "c15", "c16",
-    "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9",
+    "c1", "c10", "c11", "c12", "c13", "c14", "c15", "c16", "c2", "c3", "c4", "c5", "c6", "c7",
+    "c8", "c9",
 ];
 
 pub const EMG_VOCAB_SIZE: usize = 16;
@@ -77,9 +69,12 @@ pub fn channel_index(name: &str, modality: Modality) -> Option<usize> {
 /// Look up indices for multiple channel names.
 /// Returns indices as i64 for burn Int tensors.
 pub fn channel_indices(names: &[&str], modality: Modality) -> Vec<i64> {
-    names.iter()
-        .map(|n| channel_index(n, modality)
-            .unwrap_or_else(|| panic!("Unknown {modality:?} channel: {n}")) as i64)
+    names
+        .iter()
+        .map(|n| {
+            channel_index(n, modality)
+                .unwrap_or_else(|| panic!("Unknown {modality:?} channel: {n}")) as i64
+        })
         .collect()
 }
 
@@ -110,7 +105,8 @@ pub fn create_embedding_ix(
     let mut spatial_ix = Vec::with_capacity(n_channels * n_time);
     for name in channel_names {
         let idx = channel_index(name, modality)
-            .unwrap_or_else(|| panic!("Unknown {modality:?} channel: {name}")) as i64;
+            .unwrap_or_else(|| panic!("Unknown {modality:?} channel: {name}"))
+            as i64;
         for _ in 0..n_time {
             spatial_ix.push(idx);
         }

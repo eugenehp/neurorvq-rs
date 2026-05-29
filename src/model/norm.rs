@@ -1,7 +1,6 @@
-/// LayerNorm wrapper for NeuroRVQ.
-
-use burn::prelude::*;
 use burn::nn::{LayerNorm, LayerNormConfig};
+/// LayerNorm wrapper for NeuroRVQ.
+use burn::prelude::*;
 
 #[derive(Module, Debug)]
 pub struct NeuroLayerNorm<B: Backend> {
